@@ -1,0 +1,1191 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tile Preview</title>
+<style>
+  :root {
+    --bg: #181a1e;
+    --bar: #22242a;
+    --fg: #dcdee2;
+    --dim: #8a8f99;
+    --hi: #ffffff;
+    --btn: #2f3238;
+    --btn-edge: #444a53;
+    --field: #15171b;
+    --accent: #3a5a86;
+  }
+  html, body {
+    margin: 0; height: 100%; background: var(--bg); color: var(--fg);
+    font: 13px/1.4 ui-monospace, Menlo, Consolas, "Liberation Mono", monospace;
+    overflow: hidden;
+  }
+  #app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+
+  #status {
+    background: var(--bar); padding: 6px 16px; display: flex; flex-wrap: wrap;
+    align-items: center; gap: 6px 12px;
+  }
+  #pat { font-weight: bold; white-space: nowrap; }
+  #swatches { display: inline-flex; gap: 3px; }
+  .sw { width: 18px; height: 16px; border-radius: 3px; border: 1px solid #0006; }
+  #info { color: var(--dim); word-break: break-all; }
+
+  #stage { flex: 1; min-height: 160px; position: relative; overflow: hidden; background: #181a1e; }
+  #view { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+  #panel {
+    background: var(--bar); padding: 8px 16px; border-top: 1px solid #0005;
+    display: flex; flex-direction: column; gap: 8px;
+    max-height: 42vh; overflow: auto;
+  }
+  .row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+  .lbl { color: var(--dim); min-width: 5.5em; }
+  .sub { color: var(--dim); }
+  button {
+    font: inherit; color: var(--fg); background: var(--btn);
+    border: 1px solid var(--btn-edge); border-radius: 4px; padding: 4px 10px; cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--hi); }
+  button:disabled { opacity: .4; cursor: default; }
+  button.on { background: var(--accent); }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--hi); outline-offset: 1px; }
+  select, input[type="text"] {
+    font: inherit; color: var(--fg); background: var(--field);
+    border: 1px solid var(--btn-edge); border-radius: 4px; padding: 4px 8px;
+  }
+  input[type="text"] { width: 18em; max-width: 100%; }
+  input[type="range"] { flex: 1 1 180px; min-width: 120px; accent-color: #7aa7e0; }
+  output { min-width: 3.5em; display: inline-block; text-align: right; font-variant-numeric: tabular-nums; }
+  .slot {
+    width: 44px; height: 28px; padding: 0; border-width: 2px; border-color: transparent;
+    border-radius: 4px; box-shadow: inset 0 0 0 1px #0008;
+  }
+  .slot.active { border-color: var(--hi); }
+  #help { background: var(--bar); padding: 4px 16px 6px; font-size: 12px; border-top: 1px solid #0003; }
+
+  [hidden] { display: none !important; }
+  html.gallery { height: auto; overflow: auto; }
+  html.gallery body { height: auto; overflow: visible; }
+  #ghead {
+    background: var(--bar); padding: 8px 16px; display: flex; flex-wrap: wrap;
+    gap: 8px 12px; align-items: center; position: sticky; top: 0; z-index: 2;
+  }
+  #ghead .title { font-weight: bold; margin-right: auto; }
+  #grid { display: grid; grid-template-columns: repeat(auto-fill, 256px); justify-content: center; }
+  .cell { display: block; width: 256px; height: 256px; position: relative; background: #0003; }
+  .cell canvas { display: block; width: 256px; height: 256px; }
+  .cell:hover, .cell:focus-visible { outline: 2px solid #fff; outline-offset: -2px; z-index: 1; }
+  a.btn {
+    font: inherit; color: var(--fg); background: var(--btn); border: 1px solid var(--btn-edge);
+    border-radius: 4px; padding: 4px 10px; text-decoration: none; display: inline-block;
+  }
+  a.btn:hover { border-color: var(--hi); }
+  #msg { color: var(--hi); font-weight: bold; min-height: 1.4em; }
+  #cmd { color: var(--dim); user-select: all; word-break: break-all; }
+  @media (max-width: 600px) {
+    #status, #panel, #help { padding-left: 12px; padding-right: 12px; }
+    .lbl { min-width: 0; width: 100%; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="status">
+    <span id="pat"></span>
+    <span id="swatches"></span>
+    <span id="info"></span>
+  </div>
+
+  <div id="stage"><canvas id="view"></canvas></div>
+
+  <div id="panel">
+    <div class="row">
+      <span class="lbl">Pattern</span>
+      <button id="pPrev" title="Previous pattern" aria-label="Previous pattern">&lsaquo;</button>
+      <select id="pSelect" aria-label="Pattern"></select>
+      <button id="pNext" title="Next pattern" aria-label="Next pattern">&rsaquo;</button>
+      <button id="shuffle" title="Random pattern, colours, scale and contrast">Shuffle</button>
+    </div>
+
+    <div class="row">
+      <span class="lbl">Scale</span>
+      <input type="range" id="scale" min="0" max="3" step="1" aria-label="Pattern scale">
+      <output id="scaleOut"></output>
+    </div>
+
+    <div class="row">
+      <span class="lbl">Contrast</span>
+      <input type="range" id="contrast" min="0" max="3" step="0.1" aria-label="Contrast">
+      <output id="contrastOut"></output>
+    </div>
+
+    <div class="row">
+      <span class="lbl">Colour slot</span>
+      <span id="slotBtns" class="row"></span>
+      <button id="addSlot" title="Add colour slot">+ add</button>
+      <button id="delSlot" title="Delete active slot">&minus; delete</button>
+    </div>
+
+    <div class="row">
+      <span class="lbl">Active slot</span>
+      <span class="sub">Hue</span>
+      <input type="range" id="hue" min="0" max="360" step="1" aria-label="Hue">
+      <output id="hueOut"></output>
+    </div>
+    <div class="row">
+      <span class="lbl"></span>
+      <span class="sub">Saturation</span>
+      <input type="range" id="sat" min="0" max="100" step="1" aria-label="Saturation">
+      <output id="satOut"></output>
+    </div>
+    <div class="row">
+      <span class="lbl"></span>
+      <span class="sub">Lightness</span>
+      <input type="range" id="light" min="0" max="100" step="1" aria-label="Lightness">
+      <output id="lightOut"></output>
+    </div>
+
+    <div class="row">
+      <span class="lbl">Preset</span>
+      <button id="cPrev" title="Previous single-colour preset" aria-label="Previous preset">&lsaquo;</button>
+      <button id="cNext" title="Next single-colour preset" aria-label="Next preset">&rsaquo;</button>
+      <span class="sub">Scheme</span>
+      <button id="mPrev" title="Previous scheme" aria-label="Previous scheme">&lsaquo;</button>
+      <button id="mNext" title="Next scheme" aria-label="Next scheme">&rsaquo;</button>
+    </div>
+    <div class="row">
+      <span class="lbl">Hex</span>
+      <input type="text" id="hex" placeholder="3B6EA5, or 1E3A5F-F0A868-E8837C" spellcheck="false" aria-label="Hex colour or palette">
+      <button id="hexApply">Apply</button>
+    </div>
+
+    <div class="row">
+      <span class="lbl">View</span>
+      <button id="zOut" title="Zoom out" aria-label="Zoom out">&minus;</button>
+      <output id="zoomOut"></output>
+      <button id="zIn" title="Zoom in" aria-label="Zoom in">+</button>
+      <button id="tiled" title="Toggle repeating tiles / single tile"></button>
+      <button id="accents" title="Accent direction (single colour only)"></button>
+    </div>
+
+    <div class="row">
+      <span class="lbl">Output</span>
+      <button id="save">Save PNG</button>
+      <button id="copy">Copy command</button>
+      <button id="reset">Reset</button>
+      <a class="btn" href="?gallery=1" title="Browse a page of random tiles">Gallery</a>
+    </div>
+  </div>
+
+  <div id="help">
+    <div id="msg"></div>
+    <div id="cmd"></div>
+  </div>
+</div>
+
+  <div id="gallery" hidden>
+    <div id="ghead">
+      <span class="title">Tile gallery</span>
+      <button id="gShuffle">New set</button>
+      <a class="btn" id="gBack" href="?">Generator</a>
+    </div>
+    <div id="grid"></div>
+  </div>
+
+<script>
+"use strict";
+
+// ---------------------------------------------------------------- constants --
+// Port of tileGen.py. Keep the tables and pattern geometry in sync with tileGen.py.
+const SIZE = 256, SS = 4, CELL = 64;
+const W2 = 2;                       // 2px line at final resolution
+const ZOOM_MIN = 0.0625, ZOOM_MAX = 3.0;
+const SCALES = [0.25, 0.5, 1, 2];   // pattern scale steps (must keep an even cell count)
+const MAX_COLORS = 4;
+const BG_FILL = [24, 26, 30];
+const WHITE = [255, 255, 255], BLACK = [0, 0, 0];
+const ACCENT_MODES = ["auto", "lighter", "darker"];
+
+const PALETTE = {
+  "blue": "3B6EA5",
+  "dark blue": "1E3A5F",
+  "grey": "6B7280",
+  "charcoal": "3F454D",
+  "tan": "C8AD7F",
+  "light orange": "F0A868",
+  "light red": "E8837C",
+  "purple": "8C6BB1",
+  "dark purple": "4B2E6F",
+  "teal": "4F8F7B",
+  "sage": "7E9C6B",
+  "gold": "E0C068",
+};
+
+const SCHEMES = {
+  "sunset":       ["2B2D5B", "F0A868", "E8837C", "F6D58A"],
+  "ocean":        ["1E3A5F", "3B6EA5", "7FB5D6", "DCEBF2"],
+  "forest":       ["2F4A3A", "7E9C6B", "C8AD7F", "E9DFC4"],
+  "berry":        ["4B2E6F", "8C6BB1", "E8837C", "F4C7C3"],
+  "slate-orange": ["3F454D", "F0A868", "6B7280"],
+  "teal-gold":    ["234E52", "4F8F7B", "E0C068"],
+  "retro":        ["3B6EA5", "E8837C", "F0C27B", "F2E8CF"],
+};
+
+// Pattern-space state, set by setScale() before each render.
+//   SCALE: pattern units -> final pixels (1 / scale)   U: pattern extent   N: cells per U
+let SCALE = 1, U = SIZE, N = SIZE / CELL;
+function setScale(s) { SCALE = s; U = Math.round(SIZE / s); N = U / CELL; }
+
+// ------------------------------------------------------------------ colour --
+const mod = (i, n) => ((i % n) + n) % n;
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const round3 = v => Math.round(v * 1000) / 1000;
+const css = c => `rgb(${c[0]},${c[1]},${c[2]})`;
+
+function hexToRgb(h) {
+  h = h.trim().replace(/^#/, "");
+  if (h.length === 3) h = [...h].map(c => c + c).join("");
+  if (!/^[0-9a-fA-F]{6}$/.test(h)) throw new Error(`not a hex colour: ${h}`);
+  return [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16));
+}
+const rgbToHex = c => c.map(v => Math.round(v).toString(16).toUpperCase().padStart(2, "0")).join("");
+
+function parseColors(spec) {
+  if (typeof spec === "string") {
+    const name = spec.trim().toLowerCase();
+    for (const table of [SCHEMES, PALETTE]) {
+      if (Object.hasOwn(table, name)) { spec = table[name]; break; }
+    }
+  }
+  if (typeof spec === "string") {
+    const parts = spec.trim().split(/[-,\s]+/).filter(Boolean);
+    if (!parts.length) throw new Error("empty colour spec");
+    return parts.map(hexToRgb);
+  }
+  if (Array.isArray(spec) && spec.length === 3 && spec.every(v => typeof v === "number")) return [spec];
+  return spec.flatMap(parseColors);
+}
+
+const mix = (c, t, amt) => {
+  amt = clamp(amt, 0, 1);
+  return c.map((a, i) => Math.round(a + (t[i] - a) * amt));
+};
+const lin = v => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+const luminance = c => { const [r, g, b] = c.map(lin); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+
+// colorsys-equivalent HLS helpers (h, l, s in 0..1)
+function rgbToHls(c) {
+  const r = c[0] / 255, g = c[1] / 255, b = c[2] / 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
+  const l = (mx + mn) / 2;
+  let h = 0, s = 0;
+  if (mx !== mn) {
+    const d = mx - mn;
+    s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+    if (mx === r) h = (g - b) / d + (g < b ? 6 : 0);
+    else if (mx === g) h = (b - r) / d + 2;
+    else h = (r - g) / d + 4;
+    h /= 6;
+  }
+  return [h, l, s];
+}
+function hlsToRgb(h, l, s) {
+  if (s === 0) return [l, l, l];
+  const m2 = l <= 0.5 ? l * (1 + s) : l + s - l * s;
+  const m1 = 2 * l - m2;
+  const hue = hh => {
+    hh = mod(hh, 1);
+    if (hh < 1 / 6) return m1 + (m2 - m1) * hh * 6;
+    if (hh < 0.5) return m2;
+    if (hh < 2 / 3) return m1 + (m2 - m1) * (2 / 3 - hh) * 6;
+    return m1;
+  };
+  return [hue(h + 1 / 3), hue(h), hue(h - 1 / 3)];
+}
+const hlsHex = ([h, l, s]) => rgbToHex(hlsToRgb(h, l, s).map(v => v * 255));
+
+// Colour roles used by the pattern functions (port of tileGen.tones).
+function tones(colors, contrast = 1, accents = "auto") {
+  const pal = parseColors(colors);
+  const base = pal[0];
+  let goDark;
+  if (accents === "lighter") goDark = false;
+  else if (accents === "darker") goDark = true;
+  else goDark = luminance(base) > 0.40;
+  const [up, down] = goDark ? [BLACK, WHITE] : [WHITE, BLACK];
+  const k = contrast;
+  const T = {
+    base,
+    a:     mix(base, up, 0.07 * k),
+    line:  mix(base, up, 0.20 * k),
+    inner: mix(base, down, 0.10 * k),
+    dot:   mix(base, up, 0.30 * k),
+    ring:  mix(base, up, 0.14 * k),
+    soft:  mix(base, up, 0.035 * k),
+    shade: mix(base, down, 0.06 * k),
+    deep:  mix(base, down, 0.11 * k),
+    pal, k,
+    lit: (c, amt = 0.16) => mix(c, WHITE, amt * k),
+    dim: (c, amt = 0.20) => mix(c, BLACK, amt * k),
+  };
+  if (pal.length > 1) {
+    const v = Math.min(1, k);
+    const A = pal[1];
+    const B = pal.length > 2 ? pal[2] : A;
+    const C = pal.length > 3 ? pal[3] : B;
+    const acc = c => mix(base, c, v);
+    const aUp = luminance(A) > 0.40 ? BLACK : WHITE;
+    Object.assign(T, {
+      a:     acc(A),
+      line:  acc(B),
+      dot:   acc(C),
+      ring:  acc(B),
+      inner: mix(acc(A), aUp, 0.25),
+      soft:  mix(base, A, 0.30 * v),
+      shade: mix(base, BLACK, 0.10 * k),
+      deep:  mix(base, BLACK, 0.20 * k),
+    });
+  }
+  return T;
+}
+
+// ---------------------------------------------------------- draw primitives --
+// Coordinates are in pattern units; the context is scaled by SS * SCALE.
+// Stroke widths are given in final pixels and divided by SCALE so they stay fixed.
+const lw = w => w / SCALE;
+const diamond = (cx, cy, r) => [[cx, cy - r], [cx + r, cy], [cx, cy + r], [cx - r, cy]];
+
+const P = {
+  poly(g, pts, { fill, stroke, w = W2, close = true } = {}) {
+    g.beginPath();
+    pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+    if (close) g.closePath();
+    if (fill) { g.fillStyle = css(fill); g.fill(); }
+    if (stroke) { g.strokeStyle = css(stroke); g.lineWidth = lw(w); g.lineJoin = "round"; g.stroke(); }
+  },
+  line(g, pts, { stroke, w = W2 }) {
+    g.beginPath();
+    pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y)));
+    g.strokeStyle = css(stroke); g.lineWidth = lw(w); g.lineJoin = "round"; g.stroke();
+  },
+  circle(g, cx, cy, r, { fill, stroke, w = W2 } = {}) {
+    g.beginPath();
+    g.arc(cx, cy, r, 0, Math.PI * 2);
+    if (fill) { g.fillStyle = css(fill); g.fill(); }
+    if (stroke) { g.strokeStyle = css(stroke); g.lineWidth = lw(w); g.stroke(); }
+  },
+  rect(g, x0, y0, x1, y1, fill) {
+    g.fillStyle = css(fill);
+    g.fillRect(x0, y0, x1 - x0, y1 - y0);
+  },
+};
+// Cover the whole pattern extent (plus a margin for shapes that spill over).
+const fillAll = (g, color) => P.rect(g, -1, -1, U + 1, U + 1, color);
+
+// ---------------------------------------------------------------- patterns --
+function p_diamonds(g, T) {
+  const half = CELL / 2;
+  for (let i = -1; i <= N; i++) for (let j = -1; j <= N; j++) {
+    const cx = i * CELL + half, cy = j * CELL + half;
+    P.poly(g, diamond(cx, cy, half), { fill: T.a });
+    P.poly(g, diamond(cx, cy, 17), { stroke: T.inner });
+    P.circle(g, cx, cy, 4, { fill: T.dot });
+    const bx = i * CELL, by = j * CELL;
+    P.circle(g, bx, by, 9, { stroke: T.ring });
+    P.circle(g, bx, by, 2.5, { fill: T.ring });
+    P.poly(g, diamond(cx, cy, half), { stroke: T.line });
+  }
+}
+
+function p_scales(g, T) {
+  const r = 32, step = 32;
+  for (let j = -2; j < U / step + 2; j++) {
+    const y = j * step;
+    for (let i = -2; i < N + 2; i++) {
+      const x = i * CELL + (j % 2 ? step : 0);
+      P.circle(g, x, y, r, { fill: j % 2 === 0 ? T.a : T.base, stroke: T.line });
+      P.circle(g, x, y, 24, { stroke: T.ring });
+      P.circle(g, x, y, 16, { stroke: T.ring });
+      P.circle(g, x, y, 8, { stroke: T.ring });
+    }
+  }
+}
+
+function p_chevrons(g, T) {
+  const half = 32, amp = 16;
+  const path = k => {
+    const pts = [];
+    for (let n = -2; n < U / half + 3; n++) pts.push([n * half, k * half + (n % 2 ? amp : 0)]);
+    return pts;
+  };
+  for (let k = -2; k < U / half + 2; k++) {
+    const top = path(k), bot = path(k + 1);
+    if (k % 2 === 0) P.poly(g, top.concat(bot.slice().reverse()), { fill: T.a });
+  }
+  for (let k = -2; k < U / half + 3; k++) {
+    P.line(g, path(k), { stroke: T.line });
+    if (k % 2 === 0) {
+      for (let n = -2; n < U / half + 3; n++) {
+        if (n % 2 === 0) P.circle(g, n * half, k * half, 2.6, { fill: T.dot });
+      }
+    }
+  }
+}
+
+function p_crosses(g, T) {
+  const half = CELL / 2;
+  for (let i = -1; i <= N; i++) for (let j = -1; j <= N; j++) {
+    const cx = i * CELL + half, cy = j * CELL + half;
+    const arm = 12, th = 3.5;
+    P.rect(g, cx - arm, cy - th, cx + arm, cy + th, T.dot);
+    P.rect(g, cx - th, cy - arm, cx + th, cy + arm, T.dot);
+    P.circle(g, cx, cy, 1.6, { fill: T.base });
+    const bx = i * CELL, by = j * CELL;
+    P.circle(g, bx, by, 13, { stroke: T.soft });
+    for (const sgn of [1, -1]) {
+      P.line(g, [[bx - 7, by - 7 * sgn], [bx + 7, by + 7 * sgn]], { stroke: T.ring, w: 2.5 });
+    }
+    P.line(g, [[bx, by], [bx + CELL, by]], { stroke: T.soft, w: 1 });
+    P.line(g, [[bx, by], [bx, by + CELL]], { stroke: T.soft, w: 1 });
+  }
+}
+
+function p_pyramids(g, T) {
+  for (let i = -1; i <= N; i++) for (let j = -1; j <= N; j++) {
+    const x = i * CELL, y = j * CELL;
+    const TL = [x, y], TR = [x + CELL, y], BL = [x, y + CELL], BR = [x + CELL, y + CELL];
+    const C = [x + CELL / 2, y + CELL / 2];
+    P.poly(g, [TL, TR, C], { fill: T.a });
+    P.poly(g, [TL, BL, C], { fill: T.soft });
+    P.poly(g, [TR, BR, C], { fill: T.shade });
+    P.poly(g, [BL, BR, C], { fill: T.deep });
+    for (const [a, b] of [[TL, TR], [TL, BL], [TL, C], [TR, C], [BL, C], [BR, C]]) {
+      P.line(g, [a, b], { stroke: T.ring, w: 1 });
+    }
+    P.circle(g, x + CELL / 2, y + CELL / 2, 2, { fill: T.dot });
+  }
+}
+
+// 2.5D patterns: light from the top-left.
+function p_cubes(g, T) {
+  const pal = T.pal, lit = T.lit, dim = T.dim, n = pal.length;
+  let top, left, right;
+  if (n === 1) { top = lit(pal[0], 0.14); left = pal[0]; right = dim(pal[0], 0.16); }
+  else if (n === 2) { top = pal[1]; left = pal[0]; right = dim(pal[0], 0.20); }
+  else { top = pal[1]; left = pal[0]; right = pal[2]; }
+  const edge = n > 3 ? pal[3] : dim(left, 0.30);
+
+  const a = U / 8, h = a / 2, rows = 6, step = U / rows, e = step - h;
+  for (let j = -2; j < rows + 2; j++) {
+    for (let i = -2; i < Math.floor(U / (2 * a)) + 2; i++) {
+      const cx = i * 2 * a + (j % 2 ? a : 0), cy = j * step;
+      const faces = [
+        [top,   [[cx, cy], [cx - a, cy - h], [cx, cy - 2 * h], [cx + a, cy - h]]],
+        [left,  [[cx, cy], [cx - a, cy - h], [cx - a, cy - h + e], [cx, cy + e]]],
+        [right, [[cx, cy], [cx + a, cy - h], [cx + a, cy - h + e], [cx, cy + e]]],
+      ];
+      for (const [col, pts] of faces) P.poly(g, pts, { fill: col, stroke: edge, w: 1.5 });
+    }
+  }
+}
+
+function p_bevels(g, T) {
+  const pal = T.pal, lit = T.lit, dim = T.dim, n = pal.length;
+  let grout, A, B;
+  if (n === 1) { grout = dim(pal[0], 0.32); A = pal[0]; B = lit(pal[0], 0.05); }
+  else if (n === 2) { grout = pal[0]; A = pal[1]; B = mix(pal[1], pal[0], 0.45); }
+  else { grout = pal[0]; A = pal[1]; B = pal[2]; }
+  fillAll(g, grout);
+  const gap = 2, bw = 9;
+  for (let i = -1; i <= N; i++) for (let j = -1; j <= N; j++) {
+    const x0 = i * CELL + gap, y0 = j * CELL + gap;
+    const x1 = (i + 1) * CELL - gap, y1 = (j + 1) * CELL - gap;
+    const c = (i + j) % 2 === 0 ? A : B;
+    P.poly(g, [[x0, y0], [x1, y0], [x1 - bw, y0 + bw], [x0 + bw, y0 + bw]], { fill: lit(c, 0.24) });
+    P.poly(g, [[x0, y0], [x0 + bw, y0 + bw], [x0 + bw, y1 - bw], [x0, y1]], { fill: lit(c, 0.10) });
+    P.poly(g, [[x0, y1], [x1, y1], [x1 - bw, y1 - bw], [x0 + bw, y1 - bw]], { fill: dim(c, 0.30) });
+    P.poly(g, [[x1, y0], [x1, y1], [x1 - bw, y1 - bw], [x1 - bw, y0 + bw]], { fill: dim(c, 0.15) });
+    P.rect(g, x0 + bw, y0 + bw, x1 - bw, y1 - bw, c);
+  }
+}
+
+function p_studs(g, T) {
+  const pal = T.pal, lit = T.lit, dim = T.dim, n = pal.length;
+  const bg = pal[0];
+  let cA, cB;
+  if (n === 1) cA = cB = lit(bg, 0.10);
+  else if (n === 2) cA = cB = pal[1];
+  else { cA = pal[1]; cB = pal[2]; }
+  const R = 19;
+  const studs = [];
+  for (let i = -1; i <= N; i++) for (let j = -1; j <= N; j++) {
+    studs.push([i * CELL + CELL / 2, j * CELL + CELL / 2, cA]);
+    studs.push([i * CELL, j * CELL, cB]);
+  }
+  for (const [cx, cy] of studs) {          // shadows first
+    P.circle(g, cx + 3, cy + 4, R + 1.5, { fill: dim(bg, 0.12) });
+    P.circle(g, cx + 3.5, cy + 4.5, R, { fill: dim(bg, 0.26) });
+  }
+  const steps = 12;
+  for (const [cx, cy, c] of studs) {       // domes: rim -> lit highlight
+    const dark = dim(c, 0.24), light = lit(c, 0.30);
+    for (let t = 0; t <= steps; t++) {
+      const f = t / steps;
+      const r = R * (1 - 0.66 * f);
+      const off = (R - r) * 0.42;
+      P.circle(g, cx - off, cy - off, r, { fill: mix(dark, light, f) });
+    }
+  }
+}
+
+function p_weave(g, T) {
+  const pal = T.pal, lit = T.lit, dim = T.dim, n = pal.length;
+  let gapC, H, V;
+  if (n === 1) { gapC = dim(pal[0], 0.50); H = pal[0]; V = lit(pal[0], 0.07); }
+  else if (n === 2) { gapC = dim(pal[0], 0.50); H = pal[0]; V = pal[1]; }
+  else { gapC = pal[0]; H = pal[1]; V = pal[2]; }
+  fillAll(g, gapC);
+  const sw = 14, sg = 2, m = 1, hi = 3.5, lo = 3.5, end = 4;
+  for (let i = -1; i <= N; i++) for (let j = -1; j <= N; j++) {
+    const x = i * CELL, y = j * CELL;
+    const horiz = (i + j) % 2 === 0;
+    const c = horiz ? H : V;
+    for (let k = 0; k < 4; k++) {
+      const off = m + k * (sw + sg);
+      if (horiz) {
+        const x0 = x, y0 = y + off, x1 = x + CELL, y1 = y0 + sw;
+        P.rect(g, x0, y0, x1, y1, c);
+        P.rect(g, x0, y0, x1, y0 + hi, lit(c, 0.20));
+        P.rect(g, x0, y1 - lo, x1, y1, dim(c, 0.26));
+        P.rect(g, x0, y0 + hi, x0 + end, y1 - lo, dim(c, 0.14));
+        P.rect(g, x1 - end, y0 + hi, x1, y1 - lo, dim(c, 0.14));
+      } else {
+        const x0 = x + off, y0 = y, x1 = x0 + sw, y1 = y + CELL;
+        P.rect(g, x0, y0, x1, y1, c);
+        P.rect(g, x0, y0, x0 + hi, y1, lit(c, 0.20));
+        P.rect(g, x1 - lo, y0, x1, y1, dim(c, 0.26));
+        P.rect(g, x0 + hi, y0, x1 - lo, y0 + end, dim(c, 0.14));
+        P.rect(g, x0 + hi, y1 - end, x1 - lo, y1, dim(c, 0.14));
+      }
+    }
+  }
+}
+
+// Shared (grout, A, B) colours for the block-style 2.5D patterns below.
+function pal25(T) {
+  const pal = T.pal, lit = T.lit, dim = T.dim, n = pal.length;
+  if (n === 1) return [dim(pal[0], 0.40), pal[0], lit(pal[0], 0.08)];
+  if (n === 2) return [pal[0], pal[1], mix(pal[1], pal[0], 0.35)];
+  return [pal[0], pal[1], pal[2]];
+}
+
+function p_bricks(g, T) {
+  const [grout, A, B] = pal25(T), lit = T.lit, dim = T.dim;
+  fillAll(g, grout);
+  const gap = 2, bw = 3, rh = 32;
+  for (let j = -1; j <= U / rh; j++) {
+    const off = j % 2 ? CELL / 2 : 0;
+    for (let i = -1; i <= N; i++) {
+      const x0 = i * CELL + off + gap, x1 = (i + 1) * CELL + off - gap;
+      const y0 = j * rh + gap, y1 = (j + 1) * rh - gap;
+      const c = (i + j) % 2 === 0 ? A : B;
+      P.poly(g, [[x0, y0], [x1, y0], [x1 - bw, y0 + bw], [x0 + bw, y0 + bw]], { fill: lit(c, 0.24) });
+      P.poly(g, [[x0, y0], [x0 + bw, y0 + bw], [x0 + bw, y1 - bw], [x0, y1]], { fill: lit(c, 0.10) });
+      P.poly(g, [[x0, y1], [x1, y1], [x1 - bw, y1 - bw], [x0 + bw, y1 - bw]], { fill: dim(c, 0.30) });
+      P.poly(g, [[x1, y0], [x1, y1], [x1 - bw, y1 - bw], [x1 - bw, y0 + bw]], { fill: dim(c, 0.15) });
+      P.rect(g, x0 + bw, y0 + bw, x1 - bw, y1 - bw, c);
+    }
+  }
+}
+
+function p_shingles(g, T) {
+  const [grout, A, B] = pal25(T), lit = T.lit, dim = T.dim;
+  fillAll(g, grout);
+  const rh = 32;
+  for (let j = -2; j <= U / rh; j++) {
+    const y0 = j * rh, y1 = j * rh + 2 * rh, off = j % 2 ? CELL / 2 : 0;
+    for (let i = -1; i <= N; i++) {
+      const x0 = i * CELL + off, x1 = x0 + CELL;
+      const c = i % 2 === 0 ? A : B;
+      P.rect(g, x0 + 1, y0, x1 - 1, y1, c);
+      P.rect(g, x0 + 1, y0, x1 - 1, y0 + 4, dim(c, 0.35));
+      P.rect(g, x0 + 1, y0 + 4, x1 - 1, y0 + 7, lit(c, 0.20));
+    }
+  }
+}
+
+function p_steps(g, T) {
+  const [grout, A, B] = pal25(T), lit = T.lit, dim = T.dim;
+  fillAll(g, grout);
+  for (let i = -1; i <= N; i++) for (let j = -1; j <= N; j++) {
+    const x = i * CELL, y = j * CELL;
+    const c = (i + j) % 2 === 0 ? A : B;
+    [c, lit(c, 0.08), lit(c, 0.18)].forEach((cl, k) => {
+      const ins = k * 12;
+      const x0 = x + ins + 1, y0 = y + ins + 1, x1 = x + CELL - ins - 1, y1 = y + CELL - ins - 1;
+      P.rect(g, x0, y0, x1, y1, cl);
+      P.rect(g, x0, y0, x1, y0 + 4, lit(cl, 0.22));
+      P.rect(g, x0, y0, x0 + 4, y1, lit(cl, 0.12));
+      P.rect(g, x0, y1 - 4, x1, y1, dim(cl, 0.22));
+      P.rect(g, x1 - 4, y0, x1, y1, dim(cl, 0.12));
+    });
+  }
+}
+
+function p_planks(g, T) {
+  const [grout, A, B] = pal25(T), lit = T.lit, dim = T.dim;
+  fillAll(g, grout);
+  const rh = 32;
+  for (let j = -1; j <= U / rh; j++) {
+    const off = j % 2 ? CELL / 2 : 0, y0 = j * rh, y1 = (j + 1) * rh, yc = y0 + rh / 2;
+    for (let i = -1; i <= N; i++) {
+      const x0 = i * CELL + off + 1, x1 = (i + 1) * CELL + off - 1;
+      const c = (i + j) % 2 === 0 ? A : B;
+      P.rect(g, x0, y0 + 1, x1, y1 - 1, c);
+      P.rect(g, x0, y0 + 1, x1, y0 + 3, lit(c, 0.22));
+      P.rect(g, x0, y1 - 3, x1, y1 - 1, dim(c, 0.25));
+      P.line(g, [[x0 + 6, yc], [x1 - 6, yc]], { stroke: dim(c, 0.12), w: 1 });
+    }
+  }
+}
+
+// ---- flat patterns added with stars / waves / triangles ----
+function p_stars(g, T) {
+  for (let i = -1; i <= N; i++) for (let j = -1; j <= N; j++) {
+    const cx = i * CELL + CELL / 2, cy = j * CELL + CELL / 2;
+    const pts = [];
+    for (let k = 0; k < 16; k++) {
+      const ang = Math.PI * k / 8 - Math.PI / 2, r = k % 2 === 0 ? 26 : 11;
+      pts.push([cx + r * Math.cos(ang), cy + r * Math.sin(ang)]);
+    }
+    P.poly(g, pts, { fill: T.a });
+    P.poly(g, pts, { stroke: T.line });
+    P.circle(g, cx, cy, 4, { fill: T.dot });
+    P.circle(g, i * CELL, j * CELL, 3, { fill: T.ring });
+  }
+}
+
+function p_waves(g, T) {
+  const step = 16, amp = 4;
+  const xs = [];
+  for (let x = -CELL; x <= U + CELL; x += 4) xs.push(x);
+  const wave = (x, off) => off + amp * Math.sin(2 * Math.PI * x / CELL);
+  for (let j = -2; j < U / step + 2; j++) {
+    const y0 = j * step;
+    const top = xs.map(x => [x, wave(x, y0)]);
+    const bot = xs.map(x => [x, wave(x, y0 + step)]);
+    P.poly(g, top.concat(bot.reverse()), { fill: j % 2 === 0 ? T.a : T.base });
+    P.line(g, top, { stroke: T.line });
+  }
+}
+
+function p_triangles(g, T) {
+  for (let i = -1; i <= N; i++) for (let j = -1; j <= N; j++) {
+    const x = i * CELL, y = j * CELL, x1 = x + CELL, y1 = y + CELL;
+    let t1, t2;
+    if ((i + j) % 2 === 0) { t1 = [[x, y], [x1, y], [x1, y1]]; t2 = [[x, y], [x1, y1], [x, y1]]; }
+    else { t1 = [[x, y], [x1, y], [x, y1]]; t2 = [[x1, y], [x1, y1], [x, y1]]; }
+    P.poly(g, t1, { fill: T.a });
+    P.poly(g, t2, { fill: T.soft });
+    P.poly(g, t1, { stroke: T.line });
+    P.poly(g, t2, { stroke: T.line });
+  }
+}
+
+// ---- 2.5D patterns added with ridges / rods / gems / slabs ----
+function p_ridges(g, T) {
+  const [, A, B] = pal25(T), lit = T.lit, dim = T.dim;
+  const w = 32, lo = -U, hi = 2 * U;
+  for (let k = -4; k <= 2 * U / w + 4; k++) {
+    const c0 = k * w, c1 = (k + 1) * w, c = k % 2 === 0 ? A : B;
+    P.poly(g, [[c0 - lo, lo], [c1 - lo, lo], [c1 - hi, hi], [c0 - hi, hi]], { fill: c });
+    P.poly(g, [[c0 - lo, lo], [c0 + 3 - lo, lo], [c0 + 3 - hi, hi], [c0 - hi, hi]], { fill: lit(c, 0.25) });
+    P.poly(g, [[c1 - 3 - lo, lo], [c1 - lo, lo], [c1 - hi, hi], [c1 - 3 - hi, hi]], { fill: dim(c, 0.25) });
+  }
+}
+
+function p_rods(g, T) {
+  const [grout, A, B] = pal25(T);
+  fillAll(g, grout);
+  const H = 22, steps = 8;
+  for (let i = -1; i <= N; i++) for (let j = -1; j <= N; j++) {
+    const x = i * CELL, y = j * CELL;
+    const horiz = (i + j) % 2 === 0;
+    const c = horiz ? A : B;
+    const dark = T.dim(c, 0.30), light = T.lit(c, 0.35);
+    for (let t = 0; t < steps; t++) {
+      const f = (t + 0.5) / steps;
+      const shade = mix(dark, light, Math.max(0, 1 - Math.abs(f - 0.35) * 1.8));
+      const a0 = -H / 2 + t * H / steps, a1 = a0 + H / steps + 0.5;
+      if (horiz) {
+        const cy = y + CELL / 2;
+        P.rect(g, x + 1, cy + a0, x + CELL - 1, cy + a1, shade);
+      } else {
+        const cx = x + CELL / 2;
+        P.rect(g, cx + a0, y + 1, cx + a1, y + CELL - 1, shade);
+      }
+    }
+  }
+}
+
+function p_gems(g, T) {
+  const [grout, A, B] = pal25(T), lit = T.lit, dim = T.dim;
+  fillAll(g, grout);
+  const r = 30;
+  for (const [off, c] of [[0, A], [0.5, B]]) {
+    for (let i = -1; i <= N; i++) for (let j = -1; j <= N; j++) {
+      const cx = (i + off) * CELL, cy = (j + off) * CELL;
+      const Tp = [cx, cy - r], Rp = [cx + r, cy], Bp = [cx, cy + r], Lp = [cx - r, cy], C = [cx, cy];
+      P.poly(g, [Lp, Tp, C], { fill: lit(c, 0.22) });
+      P.poly(g, [Tp, Rp, C], { fill: c });
+      P.poly(g, [Rp, Bp, C], { fill: dim(c, 0.22) });
+      P.poly(g, [Bp, Lp, C], { fill: dim(c, 0.08) });
+      P.poly(g, [Tp, Rp, Bp, Lp], { stroke: dim(c, 0.35), w: 1.5 });
+    }
+  }
+}
+
+function p_slabs(g, T) {
+  const [grout, A, B] = pal25(T), dim = T.dim;
+  fillAll(g, grout);
+  const D = 24, E = 8, S = 14, W = CELL - S - 4;
+  for (let j = -2; j <= U / 32 + 1; j++) {
+    const y0 = j * 32, off = j % 2 ? CELL / 2 : 0;
+    for (let i = -2; i < N + 2; i++) {
+      const x0 = i * CELL + off + 2;
+      const c = (i + j) % 2 === 0 ? A : B;
+      P.poly(g, [[x0, y0 + D], [x0 + W, y0 + D], [x0 + W, y0 + D + E], [x0, y0 + D + E]], { fill: dim(c, 0.25) });
+      P.poly(g, [[x0 + W, y0 + D], [x0 + W + S, y0], [x0 + W + S, y0 + E], [x0 + W, y0 + D + E]], { fill: dim(c, 0.40) });
+      P.poly(g, [[x0 + S, y0], [x0 + S + W, y0], [x0 + W, y0 + D], [x0, y0 + D]], { fill: c });
+    }
+  }
+}
+
+const PATTERNS = {
+  diamonds: p_diamonds, scales: p_scales, chevrons: p_chevrons,
+  crosses: p_crosses, pyramids: p_pyramids,
+  cubes: p_cubes, bevels: p_bevels, studs: p_studs, weave: p_weave,
+  bricks: p_bricks, shingles: p_shingles, steps: p_steps, planks: p_planks,
+  stars: p_stars, waves: p_waves, triangles: p_triangles,
+  ridges: p_ridges, rods: p_rods, gems: p_gems, slabs: p_slabs,
+};
+const PATTERN_NAMES = Object.keys(PATTERNS);
+
+// ------------------------------------------------------------------ render --
+// Renders the 256px tile at 4x supersampling, then downsamples (as tileGen.render does).
+function renderTile(colors, pattern, contrast, accents, scale) {
+  setScale(scale);
+  const pal = parseColors(colors);
+  const big = document.createElement("canvas");
+  big.width = big.height = SIZE * SS;
+  const g = big.getContext("2d");
+  g.setTransform(SS * SCALE, 0, 0, SS * SCALE, 0, 0);
+  fillAll(g, pal[0]);
+  PATTERNS[pattern](g, tones(pal, contrast, accents));
+  const out = document.createElement("canvas");
+  out.width = out.height = SIZE;
+  const o = out.getContext("2d");
+  o.imageSmoothingEnabled = true;
+  o.imageSmoothingQuality = "high";
+  o.drawImage(big, 0, 0, SIZE, SIZE);
+  return out;
+}
+
+// -------------------------------------------------------------------- state --
+class State {
+  constructor(spec, pattern, zoom, scale = 1) {
+    this.args = [spec, pattern, zoom, scale];
+    this.pi = PATTERN_NAMES.indexOf(pattern);
+    this.setColors(parseColors(spec));
+    this.contrast = 1.0;
+    this.accents = "auto";
+    this.zoom = zoom;          // view zoom: 1.0 = true pixel size of the 256px tile
+    this.scale = scale;        // pattern scale inside the tile
+    this.tiled = true;
+    this.preset = -1;
+    this.scheme = -1;
+  }
+  reset() { Object.assign(this, new State(...this.args)); }
+  setColors(rgbs) {
+    this.hls = rgbs.slice(0, MAX_COLORS).map(rgbToHls);
+    this.active = 0;
+  }
+  setActiveRgb(rgb) { this.hls[this.active] = rgbToHls(rgb); }
+  addSlot() {
+    if (this.hls.length >= MAX_COLORS) return;
+    // New slots take the complement of the first accent so palettes stay complementary.
+    const [h, , s] = this.hls[Math.min(1, this.hls.length - 1)];
+    const l = this.hls[this.hls.length - 1][1];
+    this.hls.push([mod(h + 0.5, 1), l < 0.5 ? 0.68 : 0.32, Math.max(0.35, s)]);
+    this.active = this.hls.length - 1;
+  }
+  deleteSlot() {
+    this.hls.splice(this.active, 1);
+    this.active = Math.min(this.active, this.hls.length - 1);
+  }
+  get rgbs() {
+    return this.hls.map(([h, l, s]) => hlsToRgb(h, l, s).map(v => Math.round(v * 255)));
+  }
+  get key() { return this.rgbs.map(rgbToHex).join("-"); }
+  get pattern() { return PATTERN_NAMES[this.pi]; }
+}
+
+const cache = { key: null, tile: null };
+function getTile(st) {
+  const key = JSON.stringify([st.rgbs, st.pattern, round3(st.contrast), st.accents, st.scale]);
+  if (key !== cache.key) {
+    cache.tile = renderTile(st.rgbs, st.pattern, st.contrast, st.accents, st.scale);
+    cache.key = key;
+  }
+  return cache.tile;
+}
+
+// --------------------------------------------------------- random starting look --
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const rnd = (lo, hi) => lo + Math.random() * (hi - lo);
+
+// A random colour spec with complementary slots (background first):
+//   slot 2 = a base hue, slot 3 = its complement (opposite side of the wheel),
+//   slot 4 = a tint of the complement (when there are four slots).
+function randomSpec() {
+  const h = Math.random(), c = mod(h + 0.5, 1);
+  const dark = Math.random() < 0.6;
+  const count = pick([2, 3, 3, 4]);
+  const out = [hlsHex([h, dark ? rnd(0.12, 0.26) : rnd(0.84, 0.94), rnd(0.10, 0.40)])];
+  const mainL = dark ? rnd(0.50, 0.72) : rnd(0.32, 0.55);
+  out.push(hlsHex([h, mainL, rnd(0.45, 0.85)]));
+  if (count >= 3) out.push(hlsHex([c, mainL, rnd(0.45, 0.85)]));
+  if (count >= 4) out.push(hlsHex([c, dark ? rnd(0.78, 0.90) : rnd(0.10, 0.22), rnd(0.30, 0.70)]));
+  return out.join("-");
+}
+
+function randomize(st) {
+  st.pi = Math.floor(Math.random() * PATTERN_NAMES.length);
+  st.setColors(parseColors(randomSpec()));
+  st.contrast = Math.round(rnd(0.8, 1.5) * 10) / 10;
+  st.scale = pick([0.25, 0.5, 1, 1, 2]);
+  return st;
+}
+
+// --------------------------------------------------------------------- UI --
+const $ = id => document.getElementById(id);
+const canvas = $("view");
+const ctx = canvas.getContext("2d");
+const stage = $("stage");
+const el = {
+  pat: $("pat"), swatches: $("swatches"), info: $("info"),
+  pPrev: $("pPrev"), pNext: $("pNext"), pSelect: $("pSelect"), shuffle: $("shuffle"),
+  scale: $("scale"), scaleOut: $("scaleOut"),
+  contrast: $("contrast"), contrastOut: $("contrastOut"),
+  slotBtns: $("slotBtns"), addSlot: $("addSlot"), delSlot: $("delSlot"),
+  hue: $("hue"), sat: $("sat"), light: $("light"),
+  hueOut: $("hueOut"), satOut: $("satOut"), lightOut: $("lightOut"),
+  cPrev: $("cPrev"), cNext: $("cNext"), mPrev: $("mPrev"), mNext: $("mNext"),
+  hex: $("hex"), hexApply: $("hexApply"),
+  zOut: $("zOut"), zIn: $("zIn"), zoomOut: $("zoomOut"),
+  tiled: $("tiled"), accents: $("accents"),
+  save: $("save"), copy: $("copy"), reset: $("reset"),
+  msg: $("msg"), cmd: $("cmd"),
+};
+
+let S, msg = "";
+
+function parseSpec(s) {
+  try { return parseColors(s.trim()).slice(0, MAX_COLORS); }
+  catch (e) { return null; }
+}
+
+// Populate the pattern dropdown once.
+el.pSelect.replaceChildren(...PATTERN_NAMES.map((name, i) => {
+  const o = document.createElement("option");
+  o.value = i;
+  o.textContent = `${name} (${i + 1}/${PATTERN_NAMES.length})`;
+  return o;
+}));
+
+// Scale slider: 4 steps, labelled with the multiplier.
+el.scale.max = SCALES.length - 1;
+
+function drawView() {
+  const tile = getTile(S);
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.round(stage.clientWidth * dpr));
+  const h = Math.max(1, Math.round(stage.clientHeight * dpr));
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  const ts = Math.max(8, Math.round(SIZE * S.zoom * dpr));
+  ctx.imageSmoothingEnabled = ts < SIZE;       // pixel-crisp when enlarging
+  ctx.imageSmoothingQuality = "high";
+  ctx.fillStyle = css(BG_FILL);
+  ctx.fillRect(0, 0, w, h);
+  if (S.tiled) {
+    for (let y = 0; y < h; y += ts) for (let x = 0; x < w; x += ts) ctx.drawImage(tile, x, y, ts, ts);
+  } else {
+    ctx.drawImage(tile, Math.floor((w - ts) / 2), Math.floor((h - ts) / 2), ts, ts);
+  }
+}
+
+// Rebuild slot buttons and swatches (cheap; keeps them in step with the colours).
+function drawSlots() {
+  const rgbs = S.rgbs;
+  el.slotBtns.replaceChildren(...rgbs.map((c, n) => {
+    const b = document.createElement("button");
+    b.className = "slot" + (n === S.active ? " active" : "");
+    b.style.background = css(c);
+    b.title = `Colour slot ${n + 1} (#${rgbToHex(c)})`;
+    b.setAttribute("aria-label", `Colour slot ${n + 1}`);
+    b.setAttribute("aria-pressed", String(n === S.active));
+    b.onclick = () => act(() => { S.active = n; });
+    return b;
+  }));
+  el.swatches.replaceChildren(...rgbs.map(c => {
+    const d = document.createElement("span");
+    d.className = "sw";
+    d.style.background = css(c);
+    return d;
+  }));
+}
+
+function drawControls() {
+  const st = S;
+  const [h, l, s] = st.hls[st.active];
+  const hue = Math.round(h * 360), sat = Math.round(s * 100), lig = Math.round(l * 100);
+
+  el.pSelect.value = st.pi;
+  el.scale.value = SCALES.indexOf(st.scale);
+  el.scaleOut.textContent = `${st.scale}×`;
+  el.contrast.value = st.contrast;
+  el.contrastOut.textContent = st.contrast.toFixed(1);
+  el.hue.value = hue;   el.hueOut.textContent = hue + "°";
+  el.sat.value = sat;   el.satOut.textContent = sat + "%";
+  el.light.value = lig; el.lightOut.textContent = lig + "%";
+  el.zoomOut.textContent = st.zoom.toFixed(2) + "x";
+  el.zOut.disabled = st.zoom <= ZOOM_MIN;
+  el.zIn.disabled = st.zoom >= ZOOM_MAX;
+  el.tiled.textContent = st.tiled ? "Tiled" : "Single";
+  el.tiled.classList.toggle("on", st.tiled);
+  el.accents.textContent = "accents: " + st.accents;
+  el.accents.disabled = st.hls.length > 1;
+  el.addSlot.disabled = st.hls.length >= MAX_COLORS;
+  el.delSlot.disabled = st.hls.length <= 1;
+  if (document.activeElement !== el.hex) el.hex.value = st.key;
+}
+
+function drawChrome() {
+  const st = S;
+  el.pat.textContent = `${st.pattern} (${st.pi + 1}/${PATTERN_NAMES.length})`;
+  const [h, l, s] = st.hls[st.active];
+  const parts = [
+    `${st.zoom.toFixed(2)}x`,
+    `scale ${st.scale}x`,
+    st.tiled ? "tiled" : "single",
+    `contrast ${st.contrast.toFixed(1)}`,
+    `slot ${st.active + 1}/${st.hls.length}`,
+    `H${Math.round(h * 360)} S${Math.round(s * 100)} L${Math.round(l * 100)}`,
+  ];
+  if (st.hls.length === 1 && st.accents !== "auto") parts.push(`accents ${st.accents}`);
+  parts.push(`#${st.key}`);
+  el.info.textContent = parts.join("  ");
+
+  el.msg.textContent = msg;
+
+  let extra = "";
+  if (st.scale !== 1) extra += ` --scale ${st.scale}`;
+  if (Math.abs(st.contrast - 1) > 1e-9) extra += ` --contrast ${st.contrast}`;
+  if (st.accents !== "auto" && st.hls.length === 1) extra += ` --accents ${st.accents}`;
+  el.cmd.textContent = `python tileGen.py --colors ${st.key} --patterns ${st.pattern}${extra}`;
+}
+
+function update() {
+  drawSlots();
+  drawControls();
+  drawChrome();
+  drawView();
+}
+
+// Every control goes through act(): clears the message, applies the change, redraws.
+function act(fn) {
+  msg = "";
+  fn();
+  update();
+}
+
+// ------------------------------------------------------------------ actions --
+const stepPattern = d => { S.pi = mod(S.pi + d, PATTERN_NAMES.length); };
+
+function stepPreset(d) {
+  const presets = Object.values(PALETTE), names = Object.keys(PALETTE);
+  S.preset = mod(S.preset + d, presets.length);
+  S.setActiveRgb(hexToRgb(presets[S.preset]));
+  msg = `slot ${S.active + 1}: ${names[S.preset]}`;
+}
+
+function stepScheme(d) {
+  const names = Object.keys(SCHEMES);
+  S.scheme = mod(S.scheme + d, names.length);
+  S.setColors(parseColors(SCHEMES[names[S.scheme]]));
+  msg = `scheme: ${names[S.scheme]}`;
+}
+
+function applyHex() {
+  const v = el.hex.value;
+  if (!v.trim()) { msg = "enter a hex colour or palette first"; return; }
+  const cols = parseSpec(v);
+  if (!cols || !cols.length) { msg = "not a valid hex colour or palette"; return; }
+  if (cols.length === 1) S.setActiveRgb(cols[0]);
+  else S.setColors(cols);
+}
+
+function save() {
+  const name = `${S.key}_${S.pattern}${S.scale === 1 ? "" : "_x" + S.scale}.png`;
+  getTile(S).toBlob(blob => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }, "image/png");
+  msg = `saved ${name}`;
+}
+
+async function copyCommand() {
+  try {
+    await navigator.clipboard.writeText(el.cmd.textContent);
+    msg = "command copied to clipboard";
+  } catch (e) {
+    msg = "select the command below to copy it";
+  }
+  update();
+}
+
+// ----------------------------------------------------------------- wiring --
+el.pPrev.onclick = () => act(() => stepPattern(-1));
+el.pNext.onclick = () => act(() => stepPattern(1));
+el.pSelect.onchange = () => act(() => { S.pi = Number(el.pSelect.value); });
+el.shuffle.onclick = () => act(() => randomize(S));
+
+el.scale.oninput = () => act(() => { S.scale = SCALES[Number(el.scale.value)]; });
+
+el.contrast.oninput = () => act(() => { S.contrast = round3(Number(el.contrast.value)); });
+
+el.addSlot.onclick = () => act(() => S.addSlot());
+el.delSlot.onclick = () => act(() => S.deleteSlot());
+
+el.hue.oninput = () => act(() => { S.hls[S.active][0] = Number(el.hue.value) / 360; });
+el.sat.oninput = () => act(() => { S.hls[S.active][2] = Number(el.sat.value) / 100; });
+el.light.oninput = () => act(() => { S.hls[S.active][1] = Number(el.light.value) / 100; });
+
+el.cPrev.onclick = () => act(() => stepPreset(-1));
+el.cNext.onclick = () => act(() => stepPreset(1));
+el.mPrev.onclick = () => act(() => stepScheme(-1));
+el.mNext.onclick = () => act(() => stepScheme(1));
+
+el.hexApply.onclick = () => act(applyHex);
+el.hex.addEventListener("keydown", e => { if (e.key === "Enter") act(applyHex); });
+
+el.zOut.onclick = () => act(() => { S.zoom = Math.max(ZOOM_MIN, round3(S.zoom / 1.25)); });
+el.zIn.onclick = () => act(() => { S.zoom = Math.min(ZOOM_MAX, round3(S.zoom * 1.25)); });
+el.tiled.onclick = () => act(() => { S.tiled = !S.tiled; });
+el.accents.onclick = () => act(() => {
+  const i = ACCENT_MODES.indexOf(S.accents);
+  S.accents = ACCENT_MODES[(i + 1) % ACCENT_MODES.length];
+});
+
+el.save.onclick = () => act(save);
+el.copy.onclick = () => copyCommand();
+el.reset.onclick = () => act(() => S.reset());
+
+window.addEventListener("resize", drawView);
+
+// ------------------------------------------------------------------- start --
+// A link with query parameters (e.g. ?colors=sunset&pattern=bricks) is used as-is;
+// a plain open gets a random look so every visit starts different.
+function initialState() {
+  const q = new URLSearchParams(location.search);
+  if ([...q.keys()].length === 0) {
+    return randomize(new State("3B6EA5", "diamonds", 1.0));
+  }
+  const spec = (q.get("colors") && parseSpec(q.get("colors"))) || parseSpec("3B6EA5");
+  let pattern = q.get("pattern") || "diamonds";
+  if (!PATTERNS[pattern]) pattern = "diamonds";
+  let scale = Number(q.get("scale"));
+  if (!SCALES.includes(scale)) scale = 1;
+  const st = new State(spec.map(rgbToHex).join("-"), pattern, 1.0, scale);
+  if (q.has("contrast")) st.contrast = clamp(Number(q.get("contrast")) || 1, 0, 3);
+  if (ACCENT_MODES.includes(q.get("accents"))) st.accents = q.get("accents");
+  if (q.has("zoom")) st.zoom = clamp(Number(q.get("zoom")) || 1, ZOOM_MIN, ZOOM_MAX);
+  return st;
+}
+
+// ----------------------------------------------------------------- gallery --
+// ?gallery=1 shows a page of random 256px tiles. Clicking one opens the generator
+// with that tile's settings (colors, pattern, scale, contrast, accents).
+const GALLERY = new URLSearchParams(location.search).has("gallery");
+const gridEl = $("grid");
+let gio = null, lastCols = 0;
+
+function galleryHref(st) {
+  const q = new URLSearchParams({
+    colors: st.key, pattern: st.pattern, scale: String(st.scale),
+    contrast: String(st.contrast), accents: st.accents,
+  });
+  return `${location.pathname}?${q}`;
+}
+
+// Paint a cell the first time it scrolls near the viewport.
+function paintCell(a) {
+  const st = a._st, c = a.firstChild;
+  const x = c.getContext("2d");
+  x.clearRect(0, 0, c.width, c.height);
+  x.drawImage(renderTile(st.rgbs, st.pattern, st.contrast, st.accents, st.scale), 0, 0, c.width, c.height);
+}
+
+function buildGrid() {
+  const dpr = window.devicePixelRatio || 1;
+  const px = Math.round(SIZE * dpr);
+  const cols = Math.max(1, Math.floor(window.innerWidth / SIZE));
+  const rows = Math.ceil(window.innerHeight / SIZE) + 2;   // a little more than one screen
+  lastCols = cols;
+  gridEl.replaceChildren();
+  if (gio) gio.disconnect();
+  gio = new IntersectionObserver(entries => {
+    for (const e of entries) {
+      if (e.isIntersecting) { paintCell(e.target); gio.unobserve(e.target); }
+    }
+  }, { rootMargin: "400px" });
+  const firstScreen = cols * Math.ceil(window.innerHeight / SIZE);
+  for (let n = 0; n < cols * rows; n++) {
+    const st = randomize(new State("3B6EA5", "diamonds", 1.0));
+    const a = document.createElement("a");
+    a.className = "cell";
+    a.href = galleryHref(st);
+    a.title = `${st.pattern} · ${st.scale}x · #${st.key}`;
+    a._st = st;
+    const c = document.createElement("canvas");
+    c.width = c.height = px;
+    a.appendChild(c);
+    gridEl.appendChild(a);
+    if (n < firstScreen) paintCell(a);      // what's on screen now: paint straight away
+    else gio.observe(a);                    // the rest paints as it scrolls into view
+  }
+}
+
+if (GALLERY) {
+  document.documentElement.classList.add("gallery");
+  $("app").hidden = true;
+  $("gallery").hidden = false;
+  $("gBack").href = location.pathname;
+  $("gShuffle").onclick = buildGrid;
+  window.addEventListener("resize", () => {
+    if (Math.max(1, Math.floor(window.innerWidth / SIZE)) !== lastCols) buildGrid();
+  });
+  buildGrid();
+} else {
+  S = initialState();
+  update();
+}
+</script>
+</body>
+</html>

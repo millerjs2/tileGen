@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+tiles/
+tiles.zip
+*.png
+!examples/*.png
+!screenshots/*.png
